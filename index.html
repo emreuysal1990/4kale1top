@@ -532,7 +532,8 @@ function boom(b){                       // Bomba Top patladı: top kimin ceza sa
   for(const s of G.sides){
     const P=s.pi>=0?G.P[s.pi]:null;if(!P||P.lives<=0)continue;
     const d=b.x*s.ox+b.z*s.oz,u=b.x*s.tx+b.z*s.tz;
-    if(d>=s.A-BOXD&&Math.abs(u)<=s.half&&d>bd){bd=d;best=s.pi}
+    const bw=Math.min(s.half-0.4,s.half*GOALF+2);       // çizili ceza sahasının yarı genişliği
+    if(d>=s.A-BOXD&&Math.abs(u)<=bw&&d>bd){bd=d;best=s.pi}   // yalnızca ceza sahasının içindeyse etki eder
   }
   bcast({t:'ev',e:'boom',k:best,x:r2(b.x),z:r2(b.z)});
   if(best>=0){G.P[best].lives--;concede(best)}
@@ -1264,6 +1265,7 @@ function startGameUI(){
   $('menu').classList.add('hide');$('over').classList.add('hide');$('quiz').classList.add('hide');
   for(const id of['chips','inv','fxbar','help'])$(id).classList.remove('hide');
   chipSig='';invSig=null;
+  prewarm();
   document.body.classList.add('ingame');keepAwake();
   $('bRestart').classList.toggle('hide',!isHost);$('bRestart').textContent='↻ Yeniden başlat';
   buildFigures();
@@ -1449,7 +1451,7 @@ function initScene(){
   camera=new THREE.PerspectiveCamera(45,1,1,500);camera.position.set(0,45,45);
   scene.add(new THREE.HemisphereLight(0xffffff,0x2f5038,0.72));
   const sun=new THREE.DirectionalLight(0xfff3dc,0.75);sun.position.set(-20,48,16);sun.castShadow=true;
-  sun.shadow.mapSize.set(2048,2048);const sc=sun.shadow.camera;sc.left=-46;sc.right=46;sc.top=46;sc.bottom=-46;sc.near=5;sc.far=130;sun.shadow.bias=-0.0006;
+  const sm=isTouch()?1024:2048;sun.shadow.mapSize.set(sm,sm);        // telefonda gölge haritası daha küçükconst sc=sun.shadow.camera;sc.left=-46;sc.right=46;sc.top=46;sc.bottom=-46;sc.near=5;sc.far=130;sun.shadow.bias=-0.0006;
   scene.add(sun);
   const outT=canvasTex(256,256,(g,w)=>{const r=g.createRadialGradient(w/2,w/2,10,w/2,w/2,w/2);r.addColorStop(0,'#2c6a3a');r.addColorStop(0.45,'#1d4a29');r.addColorStop(1,'#0c1711');g.fillStyle=r;g.fillRect(0,0,w,w)});
   const out=new THREE.Mesh(new THREE.PlaneGeometry(260,260),new THREE.MeshBasicMaterial({map:outT}));
@@ -1466,6 +1468,7 @@ function initScene(){
   ballTex=canvasTex(256,128,(g,w,h)=>{g.fillStyle='#fafafa';g.fillRect(0,0,w,h);g.fillStyle='#14161b';
     const pent=(cx,cy,r)=>{g.beginPath();for(let i=0;i<5;i++){const a=i*2*Math.PI/5-Math.PI/2;i?g.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r):g.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r)}g.fill()};
     for(let i=0;i<6;i++){pent(i*w/6+21,34,15);pent(i*w/6+42,94,15)}});
+  initShared();
   onResize();addEventListener('resize',onResize);
 }
 function onResize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
@@ -1528,6 +1531,39 @@ function makeLabel(text,color){
   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(7,1.75,1);return s;
 }
 const HAIR=[0x3b2a1a,0x151515,0x7a4a1e,0xd9a441,0x2a2a2a,0x5a2d0c];
+// Ortak geometri/malzemeler: her top ve güçlendirme için yeniden üretilmez (takılma ve bellek birikmesini önler)
+const SH={};const itemMats={};
+function itemMat(type){
+  if(!itemTex[type])itemTex[type]=canvasTex(96,96,(c,w)=>{c.font='64px "Segoe UI Emoji","Apple Color Emoji",sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(PU[type].ic,w/2,w/2+4)});
+  return itemMats[type]||(itemMats[type]=new THREE.SpriteMaterial({map:itemTex[type],transparent:true,depthTest:false}));
+}
+function initShared(){
+  SH.disc=new THREE.CylinderGeometry(ITEM_R,ITEM_R,0.16,28);SH.rim=new THREE.TorusGeometry(ITEM_R,0.08,8,32);
+  SH.discM=new THREE.MeshPhongMaterial({color:0xfde047,emissive:0x8a6a00,shininess:80});SH.discLife=new THREE.MeshPhongMaterial({color:0xff8fa3,emissive:0x8a1030,shininess:80});
+  SH.rimM=new THREE.MeshBasicMaterial({color:0xffffff});
+  SH.ball=new THREE.SphereGeometry(BR,24,16);SH.trail=[];for(let i=0;i<8;i++)SH.trail.push(new THREE.CircleGeometry(BR*(1-i*0.09),14));
+  SH.ring=new THREE.RingGeometry(0.75,1,40);
+}
+// İlk kullanımda oluşan kısa donmaları önlemek için her şeyi maç başında bir kez hazırlar (gölgelendirici derleme + doku yükleme)
+let warmed=false;
+function prewarm(){
+  if(warmed||!hasGL)return;warmed=true;
+  try{
+    const g=new THREE.Group();
+    ITEMK.forEach(k=>{const m=itemMat(k);renderer.initTexture(m.map);g.add(new THREE.Sprite(m))});
+    for(let n=1;n<=5;n++)renderer.initTexture(bombTex(n));
+    g.add(new THREE.Mesh(SH.disc,SH.discM),new THREE.Mesh(SH.disc,SH.discLife),new THREE.Mesh(SH.rim,SH.rimM));
+    g.add(new THREE.Mesh(SH.ball,new THREE.MeshPhongMaterial({map:ballTex,shininess:40,emissive:0x000000})));
+    g.add(new THREE.Mesh(SH.trail[0],new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0,depthWrite:false})));
+    g.add(new THREE.Mesh(SH.ring,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.9,side:THREE.DoubleSide,depthWrite:false})));
+    g.add(new THREE.Sprite(new THREE.SpriteMaterial({map:bombTex(1),transparent:true,depthTest:false})));
+    g.add(new THREE.Mesh(SH.ball,new THREE.MeshBasicMaterial({color:0xd5dde6,transparent:true,opacity:1,depthWrite:false})));
+    g.add(new THREE.Mesh(SH.ball,new THREE.MeshLambertMaterial({color:0x7dd3fc,transparent:true,opacity:0.9,emissive:0x155e75})));
+    g.scale.set(0.001,0.001,0.001);g.position.y=-5;scene.add(g);
+    renderer.compile(scene,camera);renderer.render(scene,camera);
+    scene.remove(g);
+  }catch(e){}
+}
 function buildFigures(){
   if(!hasGL)return;
   figs.forEach(f=>f&&scene.remove(f.g));figs=[];
@@ -1547,11 +1583,6 @@ function buildFigures(){
     }
     add(new THREE.CylinderGeometry(0.5,0.46,0.42,16),dark,0,0.95,0);                             // şort
     add(new THREE.SphereGeometry(0.72,24,18),mat,0,1.5,0).scale.set(1.12,0.95,0.72);             // forma
-    // göğüste ve sırtta top rozeti: içinde oyuncunun attığı gol sayısı
-    const bcv=document.createElement('canvas');bcv.width=bcv.height=128;const btx=new THREE.CanvasTexture(bcv);
-    const bm=new THREE.MeshBasicMaterial({map:btx,transparent:true});
-    const bF=add(new THREE.CircleGeometry(0.44,28),bm,0,1.52,-0.56);bF.rotation.y=Math.PI;bF.castShadow=false;
-    const bB=add(new THREE.CircleGeometry(0.44,28),bm,0,1.52,0.56);bB.castShadow=false;
     add(new THREE.TorusGeometry(0.3,0.07,8,24),white,0,2.02,0).rotation.x=Math.PI/2;             // yaka
     const band=add(new THREE.TorusGeometry(0.74,0.06,8,32),white,0,1.5,0);band.rotation.x=Math.PI/2;band.scale.set(1.12,0.72,1);
     for(const sx of[-1,1]){
@@ -1572,16 +1603,16 @@ function buildFigures(){
     const ice=new THREE.Mesh(new THREE.SphereGeometry(PR*1.25,20,14),new THREE.MeshPhongMaterial({color:0x9be7ff,transparent:true,opacity:0.55,shininess:90}));
     ice.position.y=PR;g.add(ice);
     const lab=makeLabel(P.name,COL[i]);lab.position.set(0,0.6,PR+1.5);g.add(lab);
-    scene.add(g);figs.push({g,body,ice,ring,zone,mat,lab,gf:1,hit:0,base,bcv,btx,gn:-1});
+    scene.add(g);figs.push({g,body,ice,ring,zone,mat,lab,gf:1,hit:0,base});
   });
 }
 const bombTexs={};
 function bombTex(n){return bombTexs[n]||(bombTexs[n]=canvasTex(96,96,(c,w)=>{c.textAlign='center';c.textBaseline='middle';c.fillStyle='rgba(0,0,0,.75)';c.beginPath();c.arc(w/2,w/2,40,0,7);c.fill();c.fillStyle='#ff5a3c';c.font='bold 54px Arial';c.fillText(String(n),w/2,w/2+4)}))}
 let fogMesh=null,fogA=0,fogR=10;
-function dropBall(id){const o=ballMeshes[id];if(!o)return;scene.remove(o.m);if(o.bs)scene.remove(o.bs);o.tr.forEach(t=>scene.remove(t));delete ballMeshes[id]}
+function dropBall(id){const o=ballMeshes[id];if(!o)return;scene.remove(o.m);o.m.material.dispose();if(o.bs){scene.remove(o.bs);o.bs.material.dispose()}o.tr.forEach(t=>{scene.remove(t);t.material.dispose()});delete ballMeshes[id]}
 function fxRing(x,z,color,max,dur){
   if(!hasGL)return;
-  const m=new THREE.Mesh(new THREE.RingGeometry(0.75,1,40),new THREE.MeshBasicMaterial({color:new THREE.Color(color),transparent:true,opacity:0.9,side:THREE.DoubleSide,depthWrite:false}));
+  const m=new THREE.Mesh(SH.ring,new THREE.MeshBasicMaterial({color:new THREE.Color(color),transparent:true,opacity:0.9,side:THREE.DoubleSide,depthWrite:false}));
   m.rotation.x=-Math.PI/2;m.position.set(x,0.08,z);scene.add(m);fx.push({m,t:0,dur:dur||0.45,max});
 }
 const sparkList=[];let sparkGeo=null;
@@ -1638,12 +1669,6 @@ function render(dt){
     const s=G.sides[P.side],d=s.A-P.q;
     f.g.position.set(s.tx*P.p+s.ox*d,0,s.tz*P.p+s.oz*d);f.g.rotation.y=s.a;
     f.gf+=((P.grow>0?1.8:1)*(P.tiny>0?0.55:1)-f.gf)*Math.min(1,dt*8);
-    if(f.gn!==P.goals){                                    // gol rozetini güncelle
-      f.gn=P.goals;const c=f.bcv.getContext('2d');c.clearRect(0,0,128,128);
-      c.fillStyle='#fff';c.beginPath();c.arc(64,64,60,0,7);c.fill();c.lineWidth=7;c.strokeStyle='#16181d';c.stroke();
-      c.fillStyle='#16181d';for(let k=0;k<5;k++){const a=k*2*Math.PI/5-Math.PI/2;c.beginPath();c.arc(64+Math.cos(a)*52,64+Math.sin(a)*52,11,0,7);c.fill()}
-      c.font='bold 70px Arial';c.textAlign='center';c.textBaseline='middle';c.fillText(String(P.goals),64,69);f.btx.needsUpdate=true;
-    }
     const k=P.sw>=0?Math.sin(Math.min(1,P.sw/SWING_DUR)*Math.PI):0;
     f.hit=Math.max(0,f.hit-dt*7);
     const sc=f.gf*(1+k*0.1+f.hit*0.18);
@@ -1671,9 +1696,9 @@ function render(dt){
   for(const b of G.balls){
     seen[b.id]=1;let o=ballMeshes[b.id];
     if(!o){
-      const m=new THREE.Mesh(new THREE.SphereGeometry(BR,24,16),new THREE.MeshPhongMaterial({map:ballTex,shininess:40,emissive:0x000000}));
+      const m=new THREE.Mesh(SH.ball,new THREE.MeshPhongMaterial({map:ballTex,shininess:40,emissive:0x000000}));
       m.castShadow=true;scene.add(m);
-      const tr=[];for(let i=0;i<8;i++){const t=new THREE.Mesh(new THREE.CircleGeometry(BR*(1-i*0.09),14),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0,depthWrite:false}));t.rotation.x=-Math.PI/2;scene.add(t);tr.push(t)}
+      const tr=[];for(let i=0;i<8;i++){const t=new THREE.Mesh(SH.trail[i],new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0,depthWrite:false}));t.rotation.x=-Math.PI/2;scene.add(t);tr.push(t)}
       o=ballMeshes[b.id]={m,tr,h:[]};
     }
     o.pop=Math.max(0,(o.pop||0)-dt*7);const ps=1+o.pop*0.7;o.m.scale.set(ps,ps,ps);
@@ -1704,7 +1729,7 @@ function render(dt){
         for(let k=0;k<10;k++){const a=k*Math.PI/5,pf=new THREE.Mesh(new THREE.SphereGeometry(0.34,14,10),fm);pf.position.set(Math.cos(a)*0.86,0.55+0.25*(k%2),Math.sin(a)*0.86);pf.scale.y=1.6;fogMesh.add(pf)}
         fogMesh.fm=fm;scene.add(fogMesh);
       }
-      fogR=(G.sides[0]?G.sides[0].A:20)*0.56;
+      fogR=4;                                       // bulutun dış kenarı orta yuvarlağın çizgisine denk gelir
       fogMesh.visible=true;fogMesh.scale.set(fogR,7.5,fogR);fogMesh.rotation.y+=dt*0.15;fogMesh.fm.opacity=0.96*fogA;
     }else if(fogMesh)fogMesh.visible=false;
   }
@@ -1714,17 +1739,16 @@ function render(dt){
     si[it.id]=1;let o=itemMeshes[it.id];
     if(!o){
       const g=new THREE.Group();
-      const disc=new THREE.Mesh(new THREE.CylinderGeometry(ITEM_R,ITEM_R,0.16,28),new THREE.MeshPhongMaterial(it.type==='life'?{color:0xff8fa3,emissive:0x8a1030,shininess:80}:{color:0xfde047,emissive:0x8a6a00,shininess:80}));
+      const disc=new THREE.Mesh(SH.disc,it.type==='life'?SH.discLife:SH.discM);
       disc.position.y=0.1;disc.castShadow=true;g.add(disc);
-      const rim=new THREE.Mesh(new THREE.TorusGeometry(ITEM_R,0.08,8,32),new THREE.MeshBasicMaterial({color:0xffffff}));rim.rotation.x=Math.PI/2;rim.position.y=0.18;g.add(rim);
-      if(!itemTex[it.type])itemTex[it.type]=canvasTex(96,96,(c,w)=>{c.font='64px "Segoe UI Emoji","Apple Color Emoji",sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(PU[it.type].ic,w/2,w/2+4)});
-      const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:itemTex[it.type],transparent:true,depthTest:false}));sp.scale.set(1.9,1.9,1);sp.position.y=0.9;g.add(sp);
+      const rim=new THREE.Mesh(SH.rim,SH.rimM);rim.rotation.x=Math.PI/2;rim.position.y=0.18;g.add(rim);
+      const sp=new THREE.Sprite(itemMat(it.type));sp.scale.set(1.9,1.9,1);sp.position.y=0.9;g.add(sp);
       g.position.set(it.x,0,it.z);scene.add(g);o=itemMeshes[it.id]=g;
     }
     const pu=1+0.08*Math.sin(performance.now()/160+it.id);o.scale.set(pu,1,pu);
     o.visible=!(it.ttl<3&&Math.floor(it.ttl*6)%2)&&!(fogA>0.5&&Math.hypot(it.x,it.z)<fogR-0.4);
   }
-  for(const id in itemMeshes)if(!si[id]){scene.remove(itemMeshes[id]);delete itemMeshes[id]}
+  for(const id in itemMeshes)if(!si[id]){scene.remove(itemMeshes[id]);delete itemMeshes[id]}      // geometri ve malzemeler ortak, silinecek bir şey yok
   // kıvılcımlar
   for(let i=sparkList.length-1;i>=0;i--){
     const e=sparkList[i];e.t+=dt;
@@ -1735,7 +1759,7 @@ function render(dt){
   // efekt halkaları
   for(let i=fx.length-1;i>=0;i--){
     const e=fx[i];e.t+=dt;const k=e.t/e.dur;
-    if(k>=1){scene.remove(e.m);fx.splice(i,1);continue}
+    if(k>=1){scene.remove(e.m);e.m.material.dispose();fx.splice(i,1);continue}
     const sc=1+(e.max-1)*k;e.m.scale.set(sc,sc,1);e.m.material.opacity=0.9*(1-k);
   }
   // kamera: varsayılan kuşbakışı (kendi kalen ekranın altında), V ile arkadan görünüm
