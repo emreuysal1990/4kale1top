@@ -190,6 +190,8 @@ button:disabled{opacity:.45;cursor:default}
 'use strict';
 /* ================== AYARLAR ================== */
 const MAXP=6;
+const MOB_SPD=1.1;    // dokunmatik (telefon) oyuncuları bu kat hızlı hareket eder
+const isTouch=()=>document.body.classList.contains('touch');
 const SUPER_SPD=72;   // Süper Şut top hızı
 const BOWL=9;      // 3 kişilik sahadaki güçlü duvarın dışa doğru bombesi (yarım elipsin derinliği)
 const WX=1.5;      // oyuncunun eni: derinliğinin 1,5 katı (yarım elips)
@@ -372,7 +374,7 @@ function stepPlayers(dt,timers){
     if(!P||P.lives<=0||P.side<0||!G.sides[P.side])continue;
     if(P.wx===undefined)toWorld(P);
     P.px=P.wx;P.pz=P.wz;act.push(P);
-    if(P.frozen<=0)movePlayer(P,dt,P.l,P.r,P.u,P.d,PSPEED*(P.bot?0.85:1));
+    if(P.frozen<=0)movePlayer(P,dt,P.l,P.r,P.u,P.d,PSPEED*(P.bot?0.85:1)*(P.mob?MOB_SPD:1));
     if(P.sw>=0){P.sw+=dt;if(P.sw>SWING_DUR)P.sw=-1}
     if(timers){
       P.grow=Math.max(0,P.grow-dt);P.small=Math.max(0,P.small-dt);
@@ -577,7 +579,7 @@ function stepItems(dt){
     G.itemT=3.5+Math.random()*2;                     // 3,5-5,5 saniyede bir yeni güçlendirme
     if(G.items.length<ITEM_MAX&&G.sides.length){
       const a=Math.random()*Math.PI*2,r=2.5+Math.random()*(G.sides[0].A*0.5-2.5);
-      G.items.push({id:++iid,x:Math.sin(a)*r,z:Math.cos(a)*r,type:Math.random()<0.15?'life':pickPU(),ttl:ITEM_TTL});
+      G.items.push({id:++iid,x:Math.sin(a)*r,z:Math.cos(a)*r,type:(aliveList().length>2&&Math.random()<0.15)?'life':pickPU(),ttl:ITEM_TTL});
     }
   }
   for(let i=G.items.length-1;i>=0;i--){
@@ -663,7 +665,7 @@ function hostStart(){
   L=L.filter(e=>!e.gone);
   const n=L.length;if(n<2){G.phase='lobby';sendLobby();return}
   G.P=[null,null,null,null,null,null];
-  L.forEach((e,i)=>{e.pi=i;G.P[i]=newP(e.name,e.bot)});
+  L.forEach((e,i)=>{e.pi=i;G.P[i]=newP(e.name,e.bot);G.P[i].mob=e.conn?!!e.mob:(!e.bot&&isTouch())});
   // her maçta yerler rastgele: yanındaki ve karşındaki oyuncu değişir (mümkünse bir önceki dizilişten farklı)
   const seatKey=a=>{if(a.length<4)return a.join(',');const z=a.indexOf(0);return a.slice(z).concat(a.slice(0,z)).join(',')};
   let ord=L.map((_,i)=>i);
@@ -820,7 +822,7 @@ function relayJoin(code,win,fail){
 }
 function hostData(e,d){
   if(!d||typeof d!=='object')return;
-  if(d.t==='hello'){e.name=cleanName(d.name);if(G.phase==='lobby')sendLobby();return}
+  if(d.t==='hello'){e.name=cleanName(d.name);e.mob=!!d.m;if(G.phase==='lobby')sendLobby();return}
   if(!inGame||e.pi<0)return;
   const P=G.P[e.pi];if(!P)return;
   if(d.t==='in'){P.l=!!d.l;P.r=!!d.r;P.u=!!d.u;P.d=!!d.d}
@@ -849,7 +851,7 @@ function clientLost(){
 }
 function adoptHost(c){            // bağlantı kuruldu: doğrudan lobiye/oyuna gir
   isHost=false;hostConn=c;$('status').textContent='';$('gSt').textContent='';
-  sendTo(c,{t:'hello',name:cleanName($('iName').value)});
+  sendTo(c,{t:'hello',name:cleanName($('iName').value),m:isTouch()?1:0});
 }
 function joinRoom(){
   const code=$('iCode').value.trim();
@@ -1048,7 +1050,7 @@ function onMsg(m){
     case 'lobby':
       inGame=false;my=m.you;hideGameUI();showLobby(m);
       // adım oda sahibine ulaşmadıysa yeniden gönder
-      if(!isHost&&hostConn&&m.L[m.you]&&m.L[m.you].name!==cleanName($('iName').value))sendTo(hostConn,{t:'hello',name:cleanName($('iName').value)});
+      if(!isHost&&hostConn&&m.L[m.you]&&m.L[m.you].name!==cleanName($('iName').value))sendTo(hostConn,{t:'hello',name:cleanName($('iName').value),m:isTouch()?1:0});
       if(!isHost)G.phase='lobby';
       break;
     case 'full':$('status').textContent='Oda dolu ya da oyun başlamış.';break;
@@ -1094,7 +1096,7 @@ function clientUpdate(dt){
     const P=G.P[k];if(!P)continue;
     const on=P.lives>0&&P.side>=0&&G.sides[P.side];
     if(k===my){
-      if(on&&(G.phase==='play'||G.phase==='count')&&P.frozen<=0)movePlayer(P,dt,keys.l,keys.r,keys.u,keys.d,PSPEED);
+      if(on&&(G.phase==='play'||G.phase==='count')&&P.frozen<=0)movePlayer(P,dt,keys.l,keys.r,keys.u,keys.d,PSPEED*(isTouch()?MOB_SPD:1));
       const f=Math.min(1,dt*5);P.p+=(P.sp-P.p)*f;P.q+=(P.sq-P.q)*f;
     }else{const f=Math.min(1,dt*20);P.p+=(P.tp-P.p)*f;P.q+=(P.tq-P.q)*f}
     if(on){const ox=P.wx,oz=P.wz;toWorld(P);if(ox!==undefined&&dt>0){P.vx=(P.wx-ox)/dt;P.vz=(P.wz-oz)/dt}}
@@ -1663,11 +1665,12 @@ function render(dt){
     tmpA.set(ox*(c+dist*0.1),dist,oz*(c+dist*0.1));tmpB.set(ox*c,0,oz*c);tmpUp.set(-ox,0,-oz);
   }else if(inGame){
     tf=62;tmpUp.set(0,1,0);
+    const ch=isTouch()?3.5:0;                          // telefonda kamera biraz daha yukarıdan bakar
     if(camLock){                                       // sabit: kale arkasında durur, dönmez
-      tmpA.set(s.ox*(s.A+13.5),16,s.oz*(s.A+13.5));tmpB.set(s.ox*(s.A-9),0,s.oz*(s.A-9));
+      tmpA.set(s.ox*(s.A+13.5),16+ch,s.oz*(s.A+13.5));tmpB.set(s.ox*(s.A-9+ch*0.4),0,s.oz*(s.A-9+ch*0.4));
     }else{
       const p=me.p;
-      tmpA.set(s.tx*p*0.7+s.ox*(s.A+10),12.5,s.tz*p*0.7+s.oz*(s.A+10));
+      tmpA.set(s.tx*p*0.7+s.ox*(s.A+10),12.5+ch,s.tz*p*0.7+s.oz*(s.A+10));
       tmpB.set(s.tx*p*0.4+s.ox*(s.A-11),0,s.tz*p*0.4+s.oz*(s.A-11));
     }
   }else{
