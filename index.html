@@ -428,7 +428,6 @@ function stepBall(b,dt,auth){
     if(auth){
       b.stall=0;b.last=pi;b.hitT=G.t||0;b.boost=q>=0;
       if(P.bot)P.ai.err=(Math.random()-0.5)*2*rr*WX*1.1;
-      G.hs=q>=0?0.04+0.07*q:0.02;                          // vuruş anında kısa duraklama (hit-stop)
       bcast({t:'ev',e:'hit',k:pi,q:r2(q),b:b.id});
     }
   }
@@ -495,7 +494,7 @@ function trySwing(pi){
     if(b.last!==pi||b.boost||b.wait>0||late>SWING_LATE)continue;
     const q=1-0.5*late/SWING_LATE,spd=Math.min(MAXS,b.base*(1.25+0.85*q)),sp=Math.hypot(b.vx,b.vz)||1;
     b.vx*=spd/sp;b.vz*=spd/sp;b.s=spd;b.boost=true;P.sw=SWING_WIN+0.01;
-    G.hs=0.04+0.07*q;bcast({t:'ev',e:'hit',k:pi,q:r2(q),b:b.id});
+    bcast({t:'ev',e:'hit',k:pi,q:r2(q),b:b.id});
   }
   return true;
 }
@@ -1312,10 +1311,7 @@ function onEvent(m){
   if(m.e==='hit'){
     const q=m.q,bb=G.balls.find(x=>x.id===m.b),hx=bb?bb.x:(P?P.wx:0),hz=bb?bb.z:(P?P.wz:0);
     hitSound(q);
-    if(!isHost)cHs=q>=0?0.04+0.07*q:0.02;
     if(figs[m.k])figs[m.k].hit=1;
-    if(ballMeshes[m.b])ballMeshes[m.b].pop=1;
-    if(hx!==undefined){if(bb&&q>=0)sparks(hx,hz,bb.vx,bb.vz,4+Math.round(q*4),q>0.75?0xfde047:0xffffff)}
   }else if(m.e==='wall'){
     const bb=G.balls.find(x=>x.id===m.b);hitSound(0.8);
     if(bb){sparks(bb.x,bb.z,bb.vx,bb.vz,8,0xffb020);if(ballMeshes[m.b])ballMeshes[m.b].pop=1}
