@@ -42,6 +42,7 @@ body.touch #fxbar{bottom:8px;font-size:13px}
 body.touch #big{top:18%;font-size:48px}
 body.touch .toast{font-size:20px}
 body.touch #toasts{top:44%}
+body.touch #bExit{bottom:auto;top:50px;left:calc(12px + env(safe-area-inset-left));font-size:11px;padding:7px 9px}
 body.touch #bRestart{bottom:auto;top:50px;right:calc(62px + env(safe-area-inset-right));font-size:11px;padding:7px 9px}
 body.touch textarea{font-size:16px}
 body.touch .card{padding:16px 18px;max-height:calc(100vh - 16px);-webkit-overflow-scrolling:touch}
@@ -90,6 +91,7 @@ button:disabled{opacity:.45;cursor:default}
 .toast{font-size:30px;font-weight:800;text-shadow:0 3px 12px #000;animation:pop 1.9s forwards}
 @keyframes pop{0%{transform:scale(.4);opacity:0}12%{transform:scale(1.15);opacity:1}25%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
 #bRestart{position:fixed;bottom:14px;right:10px;font-size:13px;padding:8px 12px;opacity:.9}
+#bExit{position:fixed;bottom:14px;left:10px;font-size:13px;padding:8px 12px;opacity:.9}
 #flash{position:fixed;inset:0;background:#ff2d2d;opacity:0;pointer-events:none;transition:opacity .5s}
 #quiz{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(6,12,24,.6)}
 #quiz .card{width:min(620px,92vw)}
@@ -130,6 +132,7 @@ button:disabled{opacity:.45;cursor:default}
 <div id="toasts"></div>
 <div id="flash"></div>
 <button id="bRestart" class="sec hide">↻ Yeniden başlat</button>
+<button id="bExit" class="sec hide">✕ Çık</button>
 
 <div id="quiz" class="hide"><div class="card">
   <div id="qtext"></div>
@@ -143,6 +146,7 @@ button:disabled{opacity:.45;cursor:default}
   <div id="wname"></div>
   <div id="ostats"></div>
   <div class="row"><button id="bReplay">Tekrar oyna</button><button id="bAgain" class="sec">Lobiye dön</button></div>
+  <div class="row"><button id="bExitOver" class="sec">Oyundan çık</button></div>
   <p id="overWait">Oda sahibinin yeni oyunu başlatması bekleniyor…</p>
 </div></div>
 
@@ -176,6 +180,7 @@ button:disabled{opacity:.45;cursor:default}
       <button id="bBotRm" class="sec">Bot çıkar</button>
       <button id="bStart">Başlat</button>
     </div>
+    <div class="row"><button id="bExitLobby" class="sec">Odadan çık</button></div>
     <div id="status2" style="margin-top:12px;font-size:13px;color:#fbbf24"></div>
     <details id="hMan"><summary>Kodsuz davet (oda kodu çalışmazsa)</summary>
       <label>Davet kodu (tek kod, herkese aynısını gönder)</label><textarea id="invOut" readonly></textarea>
@@ -1272,7 +1277,7 @@ function showLobby(m){
   $('bBot').disabled=m.L.length>=MAXP;
 }
 function hideGameUI(){
-  for(const id of['chips','inv','fxbar','help','big','quiz','over','bRestart'])$(id).classList.add('hide');
+  for(const id of['chips','inv','fxbar','help','big','quiz','over','bRestart','bExit'])$(id).classList.add('hide');
   document.body.classList.remove('ingame');
 }
 function startGameUI(){
@@ -1282,6 +1287,7 @@ function startGameUI(){
   prewarm();
   document.body.classList.add('ingame');keepAwake();
   $('bRestart').classList.toggle('hide',!isHost);$('bRestart').textContent='↻ Yeniden başlat';
+  $('bExit').classList.remove('hide');$('bExit').textContent='✕ Çık';
   buildFigures();
   audioInit();
 }
@@ -1442,6 +1448,34 @@ $('bStart').onclick=hostStart;
 function setLives(n){if(!isHost)return;LIVES=Math.max(1,Math.min(10,n));try{localStorage.setItem('kale4_lives',LIVES)}catch(e){}sendLobby()}
 $('bLm').onclick=()=>setLives(LIVES-1);$('bLp').onclick=()=>setLives(LIVES+1);
 $('bReplay').onclick=()=>{if(isHost)hostStart()};
+// Oyundan / odadan çıkış: her şeyi kapatıp ilk ekrana döner. Oda sahibi çıkarsa oda kapanır.
+function leaveGame(){
+  const wasHost=isHost;
+  try{
+    if(wasHost){
+      L.forEach(e=>{if(e.conn){const c=e.conn;e.conn=null;e.gone=true;try{c.close()}catch(x){}}});
+      invGen++;if(inv){inv.slots.forEach(sl=>{try{sl.conn.close()}catch(x){}});inv=null}
+      try{relayES&&relayES.close()}catch(x){}relayES=null;clearTimeout(netTimer);
+    }else{
+      if(gJoin)gJoin.stop=true;
+      const c=hostConn;hostConn=null;if(c){try{c.close()}catch(x){}}
+    }
+    try{peer&&peer.destroy()}catch(x){}peer=null;
+  }catch(x){}
+  isHost=false;inGame=false;my=-1;L=[];roomCode='';netState='idle';peerOK=relayOK=false;
+  G.phase='menu';G.P=[null,null,null,null,null,null];G.balls=[];G.items=[];G.quiz=null;
+  keys.l=keys.r=keys.u=keys.d=0;
+  hideGameUI();buildFigures();showMenu('pMain');
+  $('status').textContent=wasHost?'Oda kapatıldı.':'Odadan çıktın.';$('status2').textContent='';$('invOut').value='';$('invIn').value='';$('gOut').value='';$('gSt').textContent='';
+  $('bJoin').disabled=$('bCreate').disabled=false;
+}
+let exT=0;
+$('bExit').onclick=e=>{                    // oyun içinde yanlışlıkla basılmasın: iki kez dokun
+  e.target.blur();
+  if(Date.now()-exT<3000){exT=0;leaveGame();return}
+  exT=Date.now();e.target.textContent='Çıkılsın mı? Tekrar bas';setTimeout(()=>{if(exT)$('bExit').textContent='✕ Çık'},3000);
+};
+$('bExitOver').onclick=leaveGame;$('bExitLobby').onclick=leaveGame;
 let rsT=0;
 $('bRestart').onclick=e=>{                 // yanlışlıkla basılmasın: iki kez tıkla
   if(!isHost)return;e.target.blur();
