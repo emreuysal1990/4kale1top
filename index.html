@@ -640,7 +640,7 @@ function usePU(pi,slot){
   else if(type==='close')P.closed=D;
   else if(type==='power')P.power=D;
   else if(type==='ghost')P.ghost=D;
-  else if(type==='fog')opp.forEach(o=>{o.fog=D});                       // rakiplerin ekranında orta saha sisle kapanır
+  else if(type==='fog')G.P.forEach(o=>{if(o&&o.lives>0)o.fog=D});       // orta saha herkesin ekranında sisle kapanır (kullanan dahil)
   else if(type==='bomb')bombT.bomb=D;                                   // top D saniye sonra patlar
   else if(type==='tiny'){const mx=Math.max(...opp.map(o=>o.lives));opp.forEach(o=>{if(o.lives===mx)o.tiny=D})}   // en çok canı olan rakip(ler) küçülür
   else if(type==='steal')P.steal=D;
@@ -1729,7 +1729,7 @@ function render(dt){
         for(let k=0;k<10;k++){const a=k*Math.PI/5,pf=new THREE.Mesh(new THREE.SphereGeometry(0.34,14,10),fm);pf.position.set(Math.cos(a)*0.86,0.55+0.25*(k%2),Math.sin(a)*0.86);pf.scale.y=1.6;fogMesh.add(pf)}
         fogMesh.fm=fm;scene.add(fogMesh);
       }
-      fogR=4;                                       // bulutun dış kenarı orta yuvarlağın çizgisine denk gelir
+      fogR=6;                                       // orta yuvarlaktan yaklaşık %50 büyük
       fogMesh.visible=true;fogMesh.scale.set(fogR,7.5,fogR);fogMesh.rotation.y+=dt*0.15;fogMesh.fm.opacity=0.96*fogA;
     }else if(fogMesh)fogMesh.visible=false;
   }
