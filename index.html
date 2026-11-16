@@ -219,7 +219,6 @@ const PU={
   close:{ic:'🧱',n:'Kale Kapat',d:6},
   power:{ic:'⚡',n:'Süper Şut',d:10},
   ghost:{ic:'👻',n:'Hayalet',d:8},
-  fog:{ic:'🌫️',n:'Sis',d:12},
   bomb:{ic:'💣',n:'Bomba Top',d:5},
   tiny:{ic:'🔻',n:'Küçült',d:10},
   steal:{ic:'🧛',n:'Can Hırsızı',d:10},
@@ -1387,7 +1386,7 @@ function onEvent(m){
     if(m.k===my){const f=$('flash');f.style.transition='none';f.style.opacity=.45;requestAnimationFrame(()=>{f.style.transition='opacity .6s';f.style.opacity=0})}
   }else if(m.e==='out'){toast((P?P.name:'')+' elendi!',COL[m.k])}
   else if(m.e==='boom'){
-    fxRing(m.x,m.z,'#ff5a3c',16,0.7);fxRing(m.x,m.z,'#fde047',9,0.45);hitSound(1);beep(70,0.6,'sawtooth');
+    fxBoom(m.x,m.z);fxRing(m.x,m.z,'#ff5a3c',16,0.7);fxRing(m.x,m.z,'#fde047',9,0.45);hitSound(1);beep(70,0.6,'sawtooth');
     toast(P?(m.touch?'💣 Bomba '+P.name+' dokununca patladı!':'💣 Bomba '+P.name+' sahasında patladı!'):'💣 Bomba patladı',m.k>=0?COL[m.k]:'#fff');
     if(m.k===my){const f=$('flash');f.style.transition='none';f.style.opacity=.45;requestAnimationFrame(()=>{f.style.transition='opacity .6s';f.style.opacity=0})}
   }
@@ -1660,6 +1659,16 @@ const bombTexs={};
 function bombTex(n){return bombTexs[n]||(bombTexs[n]=canvasTex(96,96,(c,w)=>{c.textAlign='center';c.textBaseline='middle';c.fillStyle='rgba(0,0,0,.75)';c.beginPath();c.arc(w/2,w/2,40,0,7);c.fill();c.fillStyle='#ff5a3c';c.font='bold 54px Arial';c.fillText(String(n),w/2,w/2+4)}))}
 let fogMesh=null,fogA=0,fogR=10;
 function dropBall(id){const o=ballMeshes[id];if(!o)return;scene.remove(o.m);o.m.material.dispose();if(o.bs){scene.remove(o.bs);o.bs.material.dispose()}o.tr.forEach(t=>{scene.remove(t);t.material.dispose()});delete ballMeshes[id]}
+// Bomba patlaması: kısa süren ateş topu + duman + etrafa saçılan kıvılcımlar
+const boomList=[];
+function fxBoom(x,z){
+  if(!hasGL)return;
+  const mk=(color,op,dur,max,y)=>{const m=new THREE.Mesh(SH.ball,new THREE.MeshBasicMaterial({color,transparent:true,opacity:op,depthWrite:false}));m.position.set(x,y,z);scene.add(m);boomList.push({m,t:0,dur,max,op})};
+  mk(0xfff3b0,1,0.22,7,1.2);        // beyaz-sarı çekirdek
+  mk(0xff7a1a,0.9,0.38,11,1.4);     // turuncu ateş topu
+  mk(0x3a3a3a,0.55,0.75,14,2.2);    // duman
+  for(let k=0;k<3;k++){const a=k*2.094+Math.random();sparks(x,z,Math.cos(a)*34,Math.sin(a)*34,7,k%2?0xfde047:0xff5a3c)}
+}
 function fxRing(x,z,color,max,dur){
   if(!hasGL)return;
   const m=new THREE.Mesh(SH.ring,new THREE.MeshBasicMaterial({color:new THREE.Color(color),transparent:true,opacity:0.9,side:THREE.DoubleSide,depthWrite:false}));
@@ -1808,6 +1817,12 @@ function render(dt){
     if(e.t>=e.dur){scene.remove(e.m);sparkList.splice(i,1);continue}
     e.m.position.x+=e.vx*dt;e.m.position.z+=e.vz*dt;e.m.position.y=0.4+Math.sin(e.t/e.dur*Math.PI)*e.h;
     const sc=1-e.t/e.dur;e.m.scale.set(sc,sc,sc);
+  }
+  // bomba patlaması
+  for(let i=boomList.length-1;i>=0;i--){
+    const e=boomList[i];e.t+=dt;const k=e.t/e.dur;
+    if(k>=1){scene.remove(e.m);e.m.material.dispose();boomList.splice(i,1);continue}
+    const sc=1+(e.max-1)*(1-(1-k)*(1-k));e.m.scale.set(sc,sc,sc);e.m.material.opacity=e.op*(1-k);
   }
   // efekt halkaları
   for(let i=fx.length-1;i>=0;i--){
